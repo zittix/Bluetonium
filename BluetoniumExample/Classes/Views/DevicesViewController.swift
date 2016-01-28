@@ -104,6 +104,7 @@ class DevicesViewController: UITableViewController, ManagerDelegate {
         
         let vc = ConnectedViewController(nibName: "ConnectedViewController", bundle: NSBundle.mainBundle())
         vc.btManager = btManager
+		vc.device = device
         presentViewController(UINavigationController(rootViewController: vc), animated: true, completion: nil)
     }
     

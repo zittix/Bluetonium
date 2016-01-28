@@ -13,16 +13,16 @@ public class Manager: NSObject, CBCentralManagerDelegate {
     
     public var bluetoothEnabled: Bool {
         get {
-            return centralManager?.state == .PoweredOn
+            return centralManager.state == .PoweredOn
         }
     }
     private(set) public var scanning = false
-    private(set) public var connectedDevice: Device?
+	private(set) public var connectedDevices: [String:Device] = [:]
     private(set) public var foundDevices: [Device]!
     public weak var delegate: ManagerDelegate?
     
-    private var centralManager: CBCentralManager?
-    private var disconnecting = false
+    private var centralManager: CBCentralManager!
+	
     private let dispatchQueue = dispatch_queue_create(ManagerConstants.dispatchQueueLabel, nil)
     
     // MARK: Initializers
@@ -43,15 +43,16 @@ public class Manager: NSObject, CBCentralManagerDelegate {
      Found devices will be returned in the foundDevices array.
     
      - parameter services: The UUID of the service the device is advertising with, can be nil.
+	 - parameter options: Option passed directly to CoreBluetooth
     */
-    public func startScanForDevices(advertisingWithServices services: [String]? = nil) {
+	public func startScanForDevices(advertisingWithServices services: [String]? = nil, options: [String:AnyObject]? = nil) {
         if scanning == true {
             return
         }
         scanning = true
         
         foundDevices.removeAll()
-        centralManager?.scanForPeripheralsWithServices(services?.CBUUIDs(), options: nil)
+        centralManager.scanForPeripheralsWithServices(services?.CBUUIDs(), options: options)
     }
     
     /**
@@ -61,7 +62,7 @@ public class Manager: NSObject, CBCentralManagerDelegate {
     public func stopScanForDevices() {
         scanning = false
         
-        centralManager?.stopScan()
+        centralManager.stopScan()
     }
     
     /**
@@ -71,69 +72,97 @@ public class Manager: NSObject, CBCentralManagerDelegate {
      */
     public func connectWithDevice(device: Device) {
         // Only allow connecting when it's not yet connected to another device.
-        if connectedDevice != nil || disconnecting {
+        if let _ = self.deviceForUUID(device.deviceUuid) {
             return
         }
         
-        connectedDevice = device
-        connectToDevice()
+        connectedDevices[device.deviceUuid] = device
+		
+        connectToDevice(device)
     }
     
     /**
      Disconnect from the connected device.
      Only possible when not connected to a device.
      */
-    public func disconnectFromDevice() {
+	public func disconnectFromDevice(device: Device) {
         // Reset stored UUID.
-        storeConnectedUUID(nil)
+        removeConnectedUUID(device.deviceUuid)
         
-        guard let peripheral = connectedDevice?.peripheral else {
+        guard let peripheral = connectedDevices[device.deviceUuid] else {
             return
         }
         
-        if peripheral.state != .Connected {
-            connectedDevice = nil
+        if peripheral.peripheral.state != .Connected {
+            connectedDevices.removeValueForKey(device.deviceUuid)
         } else {
-            disconnecting = true
-            centralManager?.cancelPeripheralConnection(peripheral)
+            peripheral.disconnecting = true
+            centralManager.cancelPeripheralConnection(peripheral.peripheral)
         }
     }
     
     // MARK: Private functions
-    
-    private func connectToDevice() {
-        if let peripheral = connectedDevice?.peripheral {
-            // Store connected UUID, to enable later connection to the same peripheral.
-            storeConnectedUUID(peripheral.identifier.UUIDString)
-            
-            if peripheral.state == .Disconnected {
-                
-                dispatch_async(dispatch_get_main_queue()) { () -> Void in
-                    // Send callback to delegate.
-                    self.delegate?.manager(self, willConnectToDevice: self.connectedDevice!)
-                }
-                
-                centralManager?.connectPeripheral(peripheral, options: [CBConnectPeripheralOptionNotifyOnDisconnectionKey: NSNumber(bool: true)])
-            }
-        }
+	
+	private func deviceForUUID(uuid: String) -> Device? {
+		return connectedDevices[uuid]
+	}
+	
+	private func connectToDevice(device: Device) {
+		
+		// Store connected UUID, to enable later connection to the same peripheral.
+		storeConnectedUUID(device.deviceUuid)
+		
+		if device.peripheral.state == .Disconnected {
+			
+			dispatch_async(dispatch_get_main_queue()) { () -> Void in
+				// Send callback to delegate.
+				self.delegate?.manager(self, willConnectToDevice: device)
+			}
+			
+			centralManager.connectPeripheral(device.peripheral, options: [CBConnectPeripheralOptionNotifyOnDisconnectionKey: NSNumber(bool: true)])
+		}
+		
     }
-    
+	
     /**
      Store the connectedUUID in the UserDefaults.
      This is to restore the connection after the app restarts or runs in the background.
      */
-    private func storeConnectedUUID(UUID: String?) {
-        let defaults = NSUserDefaults.standardUserDefaults()
-        defaults.setObject(UUID, forKey: ManagerConstants.UUIDStoreKey)
-        defaults.synchronize()
+    private func storeConnectedUUID(UUID: String) {
+		let defaults = NSUserDefaults.standardUserDefaults()
+		let arr : [String]
+		if var arrtmp = defaults.objectForKey(ManagerConstants.UUIDStoreKey) as? [String] {
+			arrtmp.append(UUID);
+			arr = arrtmp
+		} else {
+			arr = [UUID]
+		}
+		defaults.setObject(arr, forKey: ManagerConstants.UUIDStoreKey)
+		defaults.synchronize()
     }
-    
+	
+	private func removeConnectedUUID(UUID: String) {
+		let defaults = NSUserDefaults.standardUserDefaults()
+
+		if var arrtmp = defaults.objectForKey(ManagerConstants.UUIDStoreKey) as? [String] {
+			if let idx = arrtmp.indexOf(UUID) {
+				arrtmp.removeAtIndex(idx)
+			}
+			defaults.setObject(arrtmp, forKey: ManagerConstants.UUIDStoreKey)
+			defaults.synchronize()
+		}
+	}
+	
     /**
      Returns the stored UUID if there is one.
      */
-    private func storedConnectedUUID() -> String? {
+    private func storedConnectedUUID() -> [String]? {
         let defaults = NSUserDefaults.standardUserDefaults()
-        return defaults.objectForKey(ManagerConstants.UUIDStoreKey) as? String
+		if let arr = defaults.objectForKey(ManagerConstants.UUIDStoreKey) as? [String] where arr.count > 0 {
+			return arr
+		}
+		
+		return nil
     }
     
     // MARK: CBCentralManagerDelegate
@@ -146,30 +175,31 @@ public class Manager: NSObject, CBCentralManagerDelegate {
         
         if central.state == .PoweredOn {
             
-            if connectedDevice != nil {
-                
-                connectToDevice()
+            if connectedDevices.count > 0 {
+				
+				for device in connectedDevices.values {
+					connectToDevice(device)
+				}
                 
             } else if let storedUUID = storedConnectedUUID() {
-                
-                if let peripheral = central.retrievePeripheralsWithIdentifiers([NSUUID(UUIDString: storedUUID)!]).first {
-                    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, Int64(0.2 * Double(NSEC_PER_SEC))), dispatchQueue) {
-                        let device = Device(peripheral: peripheral)
-                        device.registerServiceManager()
-                        self.connectWithDevice(device)
-                    }
-                }
-                
+				for uuid in storedUUID {
+					if let peripheral = central.retrievePeripheralsWithIdentifiers([NSUUID(UUIDString: uuid)!]).first {
+						dispatch_after(dispatch_time(DISPATCH_TIME_NOW, Int64(0.2 * Double(NSEC_PER_SEC))), dispatchQueue) {
+							let device = Device(peripheral: peripheral)
+							device.registerServiceManager()
+							self.connectWithDevice(device)
+						}
+					}
+				}
             }
-            
+			
         } else if central.state == .PoweredOff {
             
             dispatch_async(dispatch_get_main_queue()) { () -> Void in
-                self.connectedDevice?.serviceModelManager.resetServices()
-                
-                if let connectedDevice = self.connectedDevice {
-                    self.delegate?.manager(self, disconnectedFromDevice: connectedDevice, retry: true)
-                }
+				for c in self.connectedDevices.values {
+					c.serviceModelManager.resetServices()
+					self.delegate?.manager(self, disconnectedFromDevice: c, retry: true)
+				}
             }
             
         }
@@ -188,40 +218,46 @@ public class Manager: NSObject, CBCentralManagerDelegate {
             }
         }
     }
-    
+	
     @objc public func centralManager(central: CBCentralManager, didConnectPeripheral peripheral: CBPeripheral) {
-        if let connectedDevice = connectedDevice {
+        if let c = connectedDevices[peripheral.identifier.UUIDString] {
             dispatch_async(dispatch_get_main_queue()) { () -> Void in
                 // Send callback to delegate.
-                self.delegate?.manager(self, connectedToDevice: connectedDevice)
+                self.delegate?.manager(self, connectedToDevice: c)
                 
                 // Start discovering services process after connecting to peripheral.
-                connectedDevice.serviceModelManager.discoverRegisteredServices()
+                c.serviceModelManager.discoverRegisteredServices()
             }
         }
     }
     
     @objc public func centralManager(central: CBCentralManager, didFailToConnectPeripheral peripheral: CBPeripheral, error: NSError?) {
         print("didFailToConnect \(peripheral)")
+		if let c = connectedDevices[peripheral.identifier.UUIDString] {
+			connectedDevices.removeValueForKey(c.deviceUuid)
+		}
     }
     
     @objc public func centralManager(central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: NSError?) {
-        if peripheral.identifier.UUIDString == connectedDevice?.peripheral.identifier.UUIDString {
-            let device = connectedDevice!
+		if let device = connectedDevices[peripheral.identifier.UUIDString] {
             device.serviceModelManager.resetServices()
-            
-            if disconnecting {
+			
+			let willRetry : Bool
+			
+            if device.disconnecting {
                 // Disconnect initated by user.
-                connectedDevice = nil
-                disconnecting = false
+				connectedDevices.removeValueForKey(device.deviceUuid)
+                device.disconnecting = false
+				willRetry = false
             } else {
                 // Send reconnect command after peripheral disconnected.
                 // It will connect again when it became available.
                 central.connectPeripheral(peripheral, options: nil)
+				willRetry = true
             }
             
             dispatch_async(dispatch_get_main_queue()) { () -> Void in
-                self.delegate?.manager(self, disconnectedFromDevice: device, retry: self.connectedDevice != nil)
+                self.delegate?.manager(self, disconnectedFromDevice: device, retry: willRetry)
             }
         }
     }

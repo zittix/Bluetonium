@@ -28,8 +28,16 @@ public class Device: Equatable {
             return serviceModelManager.registeredServiceModels
         }
     }
+	
+	public var deviceUuid: String {
+		return peripheral.identifier.UUIDString
+	}
+	
     // The peripheral it represents.
     private(set) public var peripheral: CBPeripheral
+	
+	internal var disconnecting = false
+	
     // The ServiceModelManager that will manage all registered `ServiceModels`
     private(set) internal var serviceModelManager: ServiceModelManager
     

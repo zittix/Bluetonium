@@ -14,7 +14,8 @@ class ConnectedViewController :  UIViewController, ManagerDelegate, HeartRateSer
     @IBOutlet weak var nameLabel:UILabel!
     @IBOutlet weak var batteryLabel:UILabel!
     @IBOutlet weak var heartRateLabel:UILabel!
-    
+	var device: Device?
+	
     weak var btManager:Manager? {
         didSet {
             btManager?.delegate = self
@@ -26,7 +27,7 @@ class ConnectedViewController :  UIViewController, ManagerDelegate, HeartRateSer
         
         self.title = "Connecting..."
         
-        guard let connectedDevice = btManager?.connectedDevice else {
+        guard let connectedDevice = device else {
             return
         }
         
@@ -49,8 +50,10 @@ class ConnectedViewController :  UIViewController, ManagerDelegate, HeartRateSer
     }
     
     @IBAction func didPressDisconnect(sender:UIButton?) {
-        btManager?.disconnectFromDevice()
-        
+		if let d = device {
+			btManager?.disconnectFromDevice(d)
+		}
+		
         self.dismissViewControllerAnimated(true, completion: nil)
     }
     
