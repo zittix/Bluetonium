@@ -46,7 +46,11 @@ class DevicesViewController: UITableViewController, ManagerDelegate {
     func manager(manager: Manager, willConnectToDevice device: Device) {
         presentConnectedViewWithDevice(device)
     }
-    
+	
+	func manager(manager: Manager, failedToConnectToDevice device: Device) {
+		
+	}
+	
     func manager(manager: Manager, connectedToDevice device: Device) {
     }
     

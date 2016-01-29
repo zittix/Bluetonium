@@ -13,26 +13,24 @@ public class Manager: NSObject, CBCentralManagerDelegate {
     
     public var bluetoothEnabled: Bool {
         get {
-            return centralManager.state == .PoweredOn
+            return cbManager.state == .PoweredOn
         }
     }
     private(set) public var scanning = false
 	private(set) public var connectedDevices: [String:Device] = [:]
-    private(set) public var foundDevices: [Device]!
+    private(set) public var foundDevices: [Device] = []
     public weak var delegate: ManagerDelegate?
     
-    private var centralManager: CBCentralManager!
+    private var cbManager: CBCentralManager!
 	
-    private let dispatchQueue = dispatch_queue_create(ManagerConstants.dispatchQueueLabel, nil)
-    
     // MARK: Initializers
     
     public init(background: Bool = false) {
         super.init()
         
         let options: [String: String]? = background ? [CBCentralManagerOptionRestoreIdentifierKey: ManagerConstants.restoreIdentifier] : nil
-        foundDevices = []
-        centralManager = CBCentralManager(delegate: self, queue: dispatchQueue, options: options)
+
+        cbManager = CBCentralManager(delegate: self, queue: nil, options: options)
     }
     
     // MARK: Public functions
@@ -52,7 +50,7 @@ public class Manager: NSObject, CBCentralManagerDelegate {
         scanning = true
         
         foundDevices.removeAll()
-        centralManager.scanForPeripheralsWithServices(services?.CBUUIDs(), options: options)
+        cbManager.scanForPeripheralsWithServices(services?.CBUUIDs(), options: options)
     }
     
     /**
@@ -62,7 +60,7 @@ public class Manager: NSObject, CBCentralManagerDelegate {
     public func stopScanForDevices() {
         scanning = false
         
-        centralManager.stopScan()
+        cbManager.stopScan()
     }
     
     /**
@@ -70,7 +68,7 @@ public class Manager: NSObject, CBCentralManagerDelegate {
     
      - parameter device: The device to connect with.
      */
-    public func connectWithDevice(device: Device) {
+    public func connectWithDevice(device: Device, timeout: CFTimeInterval = ManagerConstants.defaultConnectionTimeout) {
         // Only allow connecting when it's not yet connected to another device.
         if let _ = self.deviceForUUID(device.deviceUuid) {
             return
@@ -78,7 +76,7 @@ public class Manager: NSObject, CBCentralManagerDelegate {
         
         connectedDevices[device.deviceUuid] = device
 		
-        connectToDevice(device)
+        connectToDevice(device, timeout: timeout)
     }
     
     /**
@@ -96,8 +94,8 @@ public class Manager: NSObject, CBCentralManagerDelegate {
         if peripheral.peripheral.state != .Connected {
             connectedDevices.removeValueForKey(device.deviceUuid)
         } else {
-            peripheral.disconnecting = true
-            centralManager.cancelPeripheralConnection(peripheral.peripheral)
+            peripheral.state = .Disconnecting
+            cbManager.cancelPeripheralConnection(peripheral.peripheral)
         }
     }
     
@@ -107,7 +105,7 @@ public class Manager: NSObject, CBCentralManagerDelegate {
 		return connectedDevices[uuid]
 	}
 	
-	private func connectToDevice(device: Device) {
+	private func connectToDevice(device: Device, timeout: CFTimeInterval) {
 		
 		// Store connected UUID, to enable later connection to the same peripheral.
 		storeConnectedUUID(device.deviceUuid)
@@ -119,7 +117,16 @@ public class Manager: NSObject, CBCentralManagerDelegate {
 				self.delegate?.manager(self, willConnectToDevice: device)
 			}
 			
-			centralManager.connectPeripheral(device.peripheral, options: [CBConnectPeripheralOptionNotifyOnDisconnectionKey: NSNumber(bool: true)])
+			// If not the connection will be retriggerdd when Bluetooth is back on.
+			if(self.bluetoothEnabled) {
+				cbManager.connectPeripheral(device.peripheral, options: [CBConnectPeripheralOptionNotifyOnDisconnectionKey: NSNumber(bool: true)])
+				dispatch_after(dispatch_time(DISPATCH_TIME_NOW, Int64(Double(timeout) * Double(NSEC_PER_SEC))), dispatch_get_main_queue()) {
+					if device.state == .Connecting {
+						self.cbManager.cancelPeripheralConnection(device.peripheral)
+						self.centralManager(self.cbManager, didFailToConnectPeripheral: device.peripheral, error: NSError(domain: ManagerConstants.errorDomain, code: 0x1, userInfo: [NSLocalizedDescriptionKey: NSLocalizedString("Connection timeout", comment: "")]))
+					}
+				}
+			}
 		}
 		
     }
@@ -178,13 +185,13 @@ public class Manager: NSObject, CBCentralManagerDelegate {
             if connectedDevices.count > 0 {
 				
 				for device in connectedDevices.values {
-					connectToDevice(device)
+					connectToDevice(device, timeout: ManagerConstants.defaultConnectionTimeout)
 				}
                 
             } else if let storedUUID = storedConnectedUUID() {
 				for uuid in storedUUID {
 					if let peripheral = central.retrievePeripheralsWithIdentifiers([NSUUID(UUIDString: uuid)!]).first {
-						dispatch_after(dispatch_time(DISPATCH_TIME_NOW, Int64(0.2 * Double(NSEC_PER_SEC))), dispatchQueue) {
+						dispatch_after(dispatch_time(DISPATCH_TIME_NOW, Int64(0.2 * Double(NSEC_PER_SEC))), dispatch_get_main_queue()) {
 							let device = Device(peripheral: peripheral)
 							device.registerServiceManager()
 							self.connectWithDevice(device)
@@ -232,10 +239,15 @@ public class Manager: NSObject, CBCentralManagerDelegate {
     }
     
     @objc public func centralManager(central: CBCentralManager, didFailToConnectPeripheral peripheral: CBPeripheral, error: NSError?) {
+		
         print("didFailToConnect \(peripheral)")
+		
 		if let c = connectedDevices[peripheral.identifier.UUIDString] {
 			connectedDevices.removeValueForKey(c.deviceUuid)
+			removeConnectedUUID(c.deviceUuid)
+			self.delegate?.manager(self, failedToConnectToDevice: c)
 		}
+		
     }
     
     @objc public func centralManager(central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: NSError?) {
@@ -244,10 +256,10 @@ public class Manager: NSObject, CBCentralManagerDelegate {
 			
 			let willRetry : Bool
 			
-            if device.disconnecting {
+            if device.state == .Disconnecting {
                 // Disconnect initated by user.
 				connectedDevices.removeValueForKey(device.deviceUuid)
-                device.disconnecting = false
+                device.state = .Disconnected
 				willRetry = false
             } else {
                 // Send reconnect command after peripheral disconnected.
@@ -281,7 +293,12 @@ public protocol ManagerDelegate: class {
      Called when the `Manager` did connect to the device.
      */
     func manager(manager: Manager, connectedToDevice device: Device)
-    
+	
+	/**
+	Called when the `Manager` failed to connect to the device.
+	*/
+	func manager(manager: Manager, failedToConnectToDevice device: Device)
+	
     /**
      Called when the `Manager` did disconnect from the device.
      Retry will indicate if the Manager will retry to connect when it becomes available.
@@ -292,9 +309,10 @@ public protocol ManagerDelegate: class {
 
 
 private struct ManagerConstants {
-    static let dispatchQueueLabel = "nl.e-sites.bluetooth-kit"
+    static let errorDomain = "nl.e-sites.bluetooth-kit.error"
     static let restoreIdentifier = "nl.e-sites.bluetooth-kit.restoreIdentifier"
     static let UUIDStoreKey = "nl.e-sites.bluetooth-kit.UUID"
+	static let defaultConnectionTimeout = 10.0
 }
 
 

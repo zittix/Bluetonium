@@ -21,7 +21,14 @@ public func ==(lhs: Device, rhs: Device) -> Bool {
  When registering ServiceModels on this device it will automaticly map the characteristics to the correct value.
 */
 public class Device: Equatable {
-    
+	
+	public enum ConnectionState {
+		case Disconnected
+		case Connecting
+		case Connected
+		case Disconnecting
+	}
+	
     // An array of all registered `ServiceModel` subclasses
     public var registedServiceModels: [ServiceModel] {
         get {
@@ -36,7 +43,9 @@ public class Device: Equatable {
     // The peripheral it represents.
     private(set) public var peripheral: CBPeripheral
 	
-	internal var disconnecting = false
+	internal var state : ConnectionState = .Disconnected
+	
+	internal var connectionStartTime: CFTimeInterval = 0
 	
     // The ServiceModelManager that will manage all registered `ServiceModels`
     private(set) internal var serviceModelManager: ServiceModelManager

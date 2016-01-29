@@ -67,7 +67,11 @@ class ConnectedViewController :  UIViewController, ManagerDelegate, HeartRateSer
     func manager(manager: Manager, didFindDevice device: Device) {
         
     }
-    
+	
+	func manager(manager: Manager, failedToConnectToDevice device: Device) {
+		
+	}
+	
     func manager(manager: Manager, connectedToDevice device: Device) {
         self.title = "Connected!"
     }
