@@ -20,7 +20,7 @@ public func ==(lhs: Device, rhs: Device) -> Bool {
  A `Device` will represent a CBPeripheral.
  When registering ServiceModels on this device it will automaticly map the characteristics to the correct value.
 */
-public class Device: Equatable {
+public class Device: NSObject {
 	
 	public enum ConnectionState {
 		case Disconnected
@@ -43,7 +43,14 @@ public class Device: Equatable {
     // The peripheral it represents.
     private(set) public var peripheral: CBPeripheral
 	
-	internal var state : ConnectionState = .Disconnected
+	internal(set) public var state : ConnectionState = .Disconnected
+	
+	internal(set) public var RSSI : Int?
+	internal(set) public var advertisementData : [String : AnyObject] = [:]
+	
+	public var identifier: String {
+		return peripheral.identifier.UUIDString
+	}
 	
 	internal var connectionStartTime: CFTimeInterval = 0
 	

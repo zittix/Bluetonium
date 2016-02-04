@@ -18,7 +18,7 @@ public class Manager: NSObject, CBCentralManagerDelegate {
     }
     private(set) public var scanning = false
 	private(set) public var connectedDevices: [String:Device] = [:]
-    private(set) public var foundDevices: [Device] = []
+	private(set) public var foundDevices: [String:Device] = [:]
     public weak var delegate: ManagerDelegate?
     
     private var cbManager: CBCentralManager!
@@ -213,17 +213,32 @@ public class Manager: NSObject, CBCentralManagerDelegate {
     }
     
     @objc public func centralManager(central: CBCentralManager, didDiscoverPeripheral peripheral: CBPeripheral, advertisementData: [String : AnyObject], RSSI: NSNumber) {
-        let device = Device(peripheral: peripheral);
-        if !foundDevices.contains(device) {
-            foundDevices.append(device)
-            
-            // Only after adding it to the list to prevent issues reregistering the delegate.
-            device.registerServiceManager()
-            
-            dispatch_async(dispatch_get_main_queue()) { () -> Void in
-                self.delegate?.manager(self, didFindDevice: device)
-            }
-        }
+        if let d = foundDevices[peripheral.identifier.UUIDString] {
+			
+			if RSSI.integerValue<0 {
+				d.RSSI = RSSI.integerValue
+			}
+			
+			d.advertisementData = advertisementData
+			
+		} else {
+			let device = Device(peripheral: peripheral);
+			
+			device.advertisementData = advertisementData
+			
+			if RSSI.integerValue<0 {
+				device.RSSI = RSSI.integerValue
+			}
+			
+			foundDevices[peripheral.identifier.UUIDString]=device
+			
+			// Only after adding it to the list to prevent issues reregistering the delegate.
+			device.registerServiceManager()
+			
+			dispatch_async(dispatch_get_main_queue()) { () -> Void in
+				self.delegate?.manager(self, didFindDevice: device)
+			}
+		}
     }
 	
     @objc public func centralManager(central: CBCentralManager, didConnectPeripheral peripheral: CBPeripheral) {
