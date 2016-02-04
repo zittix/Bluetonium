@@ -11,12 +11,17 @@ import CoreBluetooth
 
 public class Manager: NSObject, CBCentralManagerDelegate {
     
-    public var bluetoothEnabled: Bool {
-        get {
-            return cbManager.state == .PoweredOn
-        }
-    }
-    private(set) public var scanning = false
+	public var bluetoothEnabled: Bool = false {
+		willSet {
+			self.willChangeValueForKey("bluetoothEnabled")
+		}
+		
+		didSet {
+			self.didChangeValueForKey("bluetoothEnabled")
+		}
+	}
+	
+	private(set) public var scanning = false
 	private(set) public var connectedDevices: [String:Device] = [:]
 	private(set) public var foundDevices: [String:Device] = [:]
     public weak var delegate: ManagerDelegate?
@@ -31,6 +36,7 @@ public class Manager: NSObject, CBCentralManagerDelegate {
         let options: [String: String]? = background ? [CBCentralManagerOptionRestoreIdentifierKey: ManagerConstants.restoreIdentifier] : nil
 
         cbManager = CBCentralManager(delegate: self, queue: nil, options: options)
+		bluetoothEnabled = cbManager.state == .PoweredOn
     }
     
     // MARK: Public functions
@@ -210,6 +216,8 @@ public class Manager: NSObject, CBCentralManagerDelegate {
             }
             
         }
+		
+		bluetoothEnabled = cbManager.state == .PoweredOn
     }
     
     @objc public func centralManager(central: CBCentralManager, didDiscoverPeripheral peripheral: CBPeripheral, advertisementData: [String : AnyObject], RSSI: NSNumber) {
