@@ -10,10 +10,10 @@ import Foundation
 import CoreBluetooth
 
 internal class ServiceModelManager: NSObject, CBPeripheralDelegate {
-    
+	
     private weak var peripheral: CBPeripheral?
     private(set) internal var registeredServiceModels: [ServiceModel]
-    
+
     // MARK: Initializers
     
     internal init(withPeripheral peripheral: CBPeripheral) {
@@ -184,11 +184,17 @@ internal class ServiceModelManager: NSObject, CBPeripheralDelegate {
         }
         
         // Update the value of the changed characteristic.
-        serviceModel.didRead(characteristic.value, withUUID: characteristic.UUID.UUIDString)
+		serviceModel.didRead(characteristic.value, error:error, withUUID: characteristic.UUID.UUIDString)
     }
     
     @objc internal func peripheral(peripheral: CBPeripheral, didWriteValueForCharacteristic characteristic: CBCharacteristic, error: NSError?) {
-        print("didWrite")
+		
+		guard let serviceModel = serviceModel(withUUID: characteristic.service.UUID.UUIDString) else {
+			return
+		}
+		
+		// Update the value of the changed characteristic.
+		serviceModel.didWrite(error, withUUID: characteristic.UUID.UUIDString)
     }
-    
+	
 }

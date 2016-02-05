@@ -56,8 +56,9 @@ public class ServiceModel: Equatable {
     // MARK: Private properties
     
     private let map = Map()
-    private var readCompletionHandlers: [String: [readCompletionHandler]] = [:]
-    
+    private var readCompletionHandlers: [String: [ReadCompletionHandler]] = [:]
+	private var writeCompletionHandlers: [String: [WriteCompletionHandler]] = [:]
+	
     // MARK: Initalizers
     
     required public init() {
@@ -93,7 +94,7 @@ public class ServiceModel: Equatable {
      - parameter UUID: The UUID of the characteristic to read.
      - parameter completion: Completion block called after the read is done.
      */
-    public func readValue(withUUID UUID: String, completion: readCompletionHandler? = nil) {
+    public func readValue(withUUID UUID: String, completion: ReadCompletionHandler? = nil) {
         serviceModelManager?.readValue(UUID, serviceUUID: serviceUUID())
         
         if let completion = completion {
@@ -108,12 +109,16 @@ public class ServiceModel: Equatable {
      - parameter UUID: The UUID of the characteristic to send.
      - parameter response: Boolean to send a write with(out) response.
      */
-    public func writeValue(withUUID UUID: String, response: Bool = false) {
+	public func writeValue(withUUID UUID: String, response: Bool = false, completion: WriteCompletionHandler? = nil) {
         let value = getValueInServiceModel(withUUID: UUID)
         
         if let dataTransformer = transformer(forUUID: UUID) {
             let data = dataTransformer.transform(valueToData: value)
-            serviceModelManager?.writeValue(data, toCharacteristicUUID: UUID, serviceUUID: serviceUUID(), response: response)
+			serviceModelManager?.writeValue(data, toCharacteristicUUID: UUID, serviceUUID: serviceUUID(), response: response || completion != nil)
+			
+			if let completion = completion {
+				addWriteCompletionHandler(completion, forUUID: UUID)
+			}
         }
     }
     
@@ -168,9 +173,51 @@ public class ServiceModel: Equatable {
 
 
 extension ServiceModel {
-    
-    public typealias readCompletionHandler = ((value: MapValue) -> Void)
-    
+	
+	public class WriteCompletionHandler {
+		private let callback: (NSError?)->()
+		
+		private var ran = false
+		
+		public required init(callback: (NSError?)->(), timeout: CFTimeInterval = 10) {
+			self.callback = callback;
+			
+			dispatch_after(dispatch_time(DISPATCH_TIME_NOW, Int64(timeout * Double(NSEC_PER_SEC))), dispatch_get_main_queue()) { () -> Void in
+				if !self.ran {
+					self.run(NSError(domain: "net.xwaves.BLETimeout", code: 34, userInfo: [NSLocalizedDescriptionKey:NSLocalizedString("BLE write timed out.", comment: "")]))
+				}
+			}
+		}
+		
+		public func run(error: NSError?) {
+			ran = true
+			callback(error)
+		}
+	}
+	
+	public class ReadCompletionHandler {
+		private let callback: (MapValue?, NSError?)->()
+		
+		private var ran = false
+		
+		public required init(callback: (MapValue?, NSError?)->(), timeout: CFTimeInterval = 10) {
+			self.callback = callback;
+			
+			dispatch_after(dispatch_time(DISPATCH_TIME_NOW, Int64(timeout * Double(NSEC_PER_SEC))), dispatch_get_main_queue()) { () -> Void in
+				if !self.ran {
+					self.run(nil, error: NSError(domain: "net.xwaves.BLETimeout", code: 34, userInfo: [NSLocalizedDescriptionKey:NSLocalizedString("BLE read timed out.", comment: "")]))
+				}
+			}
+		}
+		
+		public func run(value: MapValue?, error: NSError?) {
+			if !ran {
+				ran = true
+				callback(value, error)
+			}
+		}
+	}
+	
     /**
      Called by the `Map` object.
      Adds the UUID and valueType of the instance variable it represents to an dictionary.
@@ -190,7 +237,12 @@ extension ServiceModel {
      Will get the correct DataTransformer and set the value to the instance variable.
      After that is will call the completion block (if available) and other helper functions.
      */
-    internal func didRead(data: NSData?, withUUID UUID: String) {
+	internal func didRead(data: NSData?, error: NSError?, withUUID UUID: String) {
+		
+		if let err = error {
+			callReadCompletionHandlers(withValue: nil, andError: err, forUUID: UUID)
+		}
+		
         if let dataTransformer = transformer(forUUID: UUID) {
             let value = dataTransformer.transform(dataToValue: data)
             setValueInServiceModel(value, withUUID: UUID)
@@ -199,10 +251,21 @@ extension ServiceModel {
             characteristicDidUpdateValue(withUUID: UUID)
             
             // Call all existing completion blocks for this read.
-            callReadCompletionHandlers(withValue: value, forUUID: UUID)
-        }
+			callReadCompletionHandlers(withValue: value, andError: nil, forUUID: UUID)
+		} else {
+			callReadCompletionHandlers(withValue: nil, andError: NSError(domain: "com.xwaves.BLE", code: 33, userInfo: [NSLocalizedDescriptionKey: NSLocalizedString("Invalid data type for transformer.", comment: "")]), forUUID: UUID)
+		}
     }
-    
+	
+	/**
+	Called by the `ServiceModelManager`.
+	Will call the completion block (if available) and other helper functions.
+	*/
+	internal func didWrite(error: NSError?, withUUID UUID: String) {
+		// Call all existing completion blocks for this read.
+		callWriteCompletionHandlers(withError: error, forUUID: UUID)
+	}
+	
     /**
      Called by the `ServiceModelManager` once a characteristic became available.
      */
@@ -303,7 +366,7 @@ extension ServiceModel {
      Add a completion handler to the Dictionary.
      Multiple completion blocks can be registered for the same UUID.
      */
-    private func addReadCompletionHandler(completionHandler: readCompletionHandler, forUUID UUID: String) {
+    private func addReadCompletionHandler(completionHandler: ReadCompletionHandler, forUUID UUID: String) {
         if var completionHandlers = readCompletionHandlers[UUID] {
             completionHandlers.append(completionHandler)
             readCompletionHandlers[UUID] = completionHandlers
@@ -316,17 +379,47 @@ extension ServiceModel {
      Call all registered completion blocks for that UUID.
      Multiple completion blocks can be called for the same UUID.
      */
-    private func callReadCompletionHandlers(withValue value: MapValue, forUUID UUID: String) {
+	private func callReadCompletionHandlers(withValue value: MapValue?, andError error: NSError?, forUUID UUID: String) {
         guard let completionHandlers = readCompletionHandlers[UUID] else {
             return
         }
         
         for completionHandler in completionHandlers {
-            completionHandler(value: value)
+            completionHandler.run(value, error: error)
         }
+		
         readCompletionHandlers[UUID] = nil
     }
-    
+	
+	/**
+	Add a completion handler to the Dictionary.
+	Multiple completion blocks can be registered for the same UUID.
+	*/
+	private func addWriteCompletionHandler(completionHandler: WriteCompletionHandler, forUUID UUID: String) {
+		if var completionHandlers = writeCompletionHandlers[UUID] {
+			completionHandlers.append(completionHandler)
+			writeCompletionHandlers[UUID] = completionHandlers
+		} else {
+			writeCompletionHandlers[UUID] = [completionHandler]
+		}
+	}
+	
+	/**
+	Call all registered completion blocks for that UUID.
+	Multiple completion blocks can be called for the same UUID.
+	*/
+	private func callWriteCompletionHandlers(withError error: NSError?, forUUID UUID: String) {
+		guard let completionHandlers = writeCompletionHandlers[UUID] else {
+			return
+		}
+		
+		for completionHandler in completionHandlers {
+			completionHandler.run(error)
+		}
+		
+		writeCompletionHandlers.removeValueForKey(UUID)
+	}
+	
     /**
      Check if all characteristics are available.
      */
