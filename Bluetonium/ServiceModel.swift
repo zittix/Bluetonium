@@ -109,7 +109,7 @@ public class ServiceModel: Equatable {
      - parameter UUID: The UUID of the characteristic to send.
      - parameter response: Boolean to send a write with(out) response.
      */
-	public func writeValue(withUUID UUID: String, response: Bool = false, completion: WriteCompletionHandler? = nil) {
+	public func writeValue(withUUID UUID: String, response: Bool = true, completion: WriteCompletionHandler? = nil) {
         let value = getValueInServiceModel(withUUID: UUID)
         
         if let dataTransformer = transformer(forUUID: UUID) {
