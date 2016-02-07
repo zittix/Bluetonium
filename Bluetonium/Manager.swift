@@ -25,6 +25,8 @@ public class Manager: NSObject, CBCentralManagerDelegate {
 	private(set) public var connectedDevices: [String:Device] = [:]
 	private(set) public var foundDevices: [String:Device] = [:]
     public weak var delegate: ManagerDelegate?
+	public var automaticallyRestoreConnections = false
+	
     
     private var cbManager: CBCentralManager!
 	
@@ -194,7 +196,7 @@ public class Manager: NSObject, CBCentralManagerDelegate {
 					connectToDevice(device, timeout: ManagerConstants.defaultConnectionTimeout)
 				}
                 
-            } else if let storedUUID = storedConnectedUUID() {
+            } else if let storedUUID = storedConnectedUUID() where automaticallyRestoreConnections {
 				for uuid in storedUUID {
 					if let peripheral = central.retrievePeripheralsWithIdentifiers([NSUUID(UUIDString: uuid)!]).first {
 						dispatch_after(dispatch_time(DISPATCH_TIME_NOW, Int64(0.2 * Double(NSEC_PER_SEC))), dispatch_get_main_queue()) {
