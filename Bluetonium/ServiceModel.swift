@@ -179,7 +179,7 @@ extension ServiceModel {
 		
 		private var ran = false
 		
-		public required init(callback: (NSError?)->(), timeout: CFTimeInterval = 10) {
+		public required init( _ callback: (NSError?)->(), timeout: CFTimeInterval = 10) {
 			self.callback = callback;
 			
 			dispatch_after(dispatch_time(DISPATCH_TIME_NOW, Int64(timeout * Double(NSEC_PER_SEC))), dispatch_get_main_queue()) { () -> Void in
@@ -193,6 +193,10 @@ extension ServiceModel {
 			ran = true
 			callback(error)
 		}
+		
+		public func cancel() {
+			ran = true
+		}
 	}
 	
 	public class ReadCompletionHandler {
@@ -200,7 +204,7 @@ extension ServiceModel {
 		
 		private var ran = false
 		
-		public required init(callback: (MapValue?, NSError?)->(), timeout: CFTimeInterval = 10) {
+		public required init( _ callback: (MapValue?, NSError?)->(), timeout: CFTimeInterval = 10) {
 			self.callback = callback;
 			
 			dispatch_after(dispatch_time(DISPATCH_TIME_NOW, Int64(timeout * Double(NSEC_PER_SEC))), dispatch_get_main_queue()) { () -> Void in
@@ -215,6 +219,10 @@ extension ServiceModel {
 				ran = true
 				callback(value, error)
 			}
+		}
+		
+		public func cancel() {
+			ran = true
 		}
 	}
 	
