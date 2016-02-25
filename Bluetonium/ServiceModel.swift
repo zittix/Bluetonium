@@ -321,7 +321,7 @@ extension ServiceModel {
             return UInt32DataTransformer()
         } else if valueType == NSData?.self || valueType == NSData.self {
             return NSDataDataTransformer()
-        }
+		}
         return nil
     }
     

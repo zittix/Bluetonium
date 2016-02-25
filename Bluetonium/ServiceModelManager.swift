@@ -12,7 +12,7 @@ import CoreBluetooth
 internal class ServiceModelManager: NSObject, CBPeripheralDelegate {
 	
     private weak var peripheral: CBPeripheral?
-    private(set) internal var registeredServiceModels: [ServiceModel]
+    internal var registeredServiceModels: [ServiceModel]
 
     // MARK: Initializers
     
@@ -21,7 +21,12 @@ internal class ServiceModelManager: NSObject, CBPeripheralDelegate {
         self.peripheral = peripheral
         super.init()
     }
-    
+	
+	internal override init() {
+		self.registeredServiceModels = []
+		super.init()
+	}
+	
     /**
      Discover all the registered services.
      Only the registered BTServiceModel subclasses will be discovered.

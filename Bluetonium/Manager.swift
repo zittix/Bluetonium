@@ -95,15 +95,15 @@ public class Manager: NSObject, CBCentralManagerDelegate {
         // Reset stored UUID.
         removeConnectedUUID(device.deviceUuid)
         
-        guard let peripheral = connectedDevices[device.deviceUuid] else {
+        guard let peripheral = connectedDevices[device.deviceUuid], cbPeriph = peripheral.peripheral else {
             return
         }
         
-        if peripheral.peripheral.state != .Connected {
+        if cbPeriph.state != .Connected {
             connectedDevices.removeValueForKey(device.deviceUuid)
         } else {
             peripheral.state = .Disconnecting
-            cbManager.cancelPeripheralConnection(peripheral.peripheral)
+            cbManager.cancelPeripheralConnection(cbPeriph)
         }
     }
     
@@ -118,7 +118,7 @@ public class Manager: NSObject, CBCentralManagerDelegate {
 		// Store connected UUID, to enable later connection to the same peripheral.
 		storeConnectedUUID(device.deviceUuid)
 		
-		if device.peripheral.state == .Disconnected {
+		if let periph = device.peripheral where periph.state == .Disconnected {
 			
 			dispatch_async(dispatch_get_main_queue()) { () -> Void in
 				// Send callback to delegate.
@@ -127,11 +127,11 @@ public class Manager: NSObject, CBCentralManagerDelegate {
 			
 			// If not the connection will be retriggerdd when Bluetooth is back on.
 			if(self.bluetoothEnabled) {
-				cbManager.connectPeripheral(device.peripheral, options: [CBConnectPeripheralOptionNotifyOnDisconnectionKey: NSNumber(bool: true)])
+				cbManager.connectPeripheral(periph, options: [CBConnectPeripheralOptionNotifyOnDisconnectionKey: NSNumber(bool: true)])
 				dispatch_after(dispatch_time(DISPATCH_TIME_NOW, Int64(Double(timeout) * Double(NSEC_PER_SEC))), dispatch_get_main_queue()) {
 					if device.state == .Connecting {
-						self.cbManager.cancelPeripheralConnection(device.peripheral)
-						self.centralManager(self.cbManager, didFailToConnectPeripheral: device.peripheral, error: NSError(domain: ManagerConstants.errorDomain, code: 0x1, userInfo: [NSLocalizedDescriptionKey: NSLocalizedString("Connection timeout", comment: "")]))
+						self.cbManager.cancelPeripheralConnection(periph)
+						self.centralManager(self.cbManager, didFailToConnectPeripheral: periph, error: NSError(domain: ManagerConstants.errorDomain, code: 0x1, userInfo: [NSLocalizedDescriptionKey: NSLocalizedString("Connection timeout", comment: "")]))
 					}
 				}
 			}

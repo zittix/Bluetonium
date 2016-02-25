@@ -13,7 +13,7 @@ import CoreBluetooth
  Equatable support.
  */
 public func ==(lhs: Device, rhs: Device) -> Bool {
-    return lhs.peripheral.identifier == rhs.peripheral.identifier
+    return lhs.peripheral?.identifier == rhs.peripheral?.identifier ?? false
 }
 
 /**
@@ -37,11 +37,11 @@ public class Device: NSObject {
     }
 	
 	public var deviceUuid: String {
-		return peripheral.identifier.UUIDString
+		return peripheral?.identifier.UUIDString ?? ""
 	}
 	
     // The peripheral it represents.
-    private(set) public var peripheral: CBPeripheral
+    private(set) public var peripheral: CBPeripheral?
 	
 	internal(set) public var state : ConnectionState = .Disconnected
 	
@@ -49,13 +49,13 @@ public class Device: NSObject {
 	internal(set) public var advertisementData : [String : AnyObject] = [:]
 	
 	public var identifier: String {
-		return peripheral.identifier.UUIDString
+		return peripheral?.identifier.UUIDString ?? ""
 	}
 	
 	internal var connectionStartTime: CFTimeInterval = 0
 	
     // The ServiceModelManager that will manage all registered `ServiceModels`
-    private(set) internal var serviceModelManager: ServiceModelManager
+    internal var serviceModelManager: ServiceModelManager
     
     // MARK: Initializers
     
@@ -64,11 +64,16 @@ public class Device: NSObject {
     
      - parameter peripheral: The peripheral it will represent
      */
-    public init(peripheral: CBPeripheral) {
+    public init(peripheral: CBPeripheral?) {
         self.peripheral = peripheral
-        self.serviceModelManager = ServiceModelManager(withPeripheral: peripheral)
+		if let peripheral = peripheral {
+			self.serviceModelManager = ServiceModelManager(withPeripheral: peripheral)
+		} else {
+			self.serviceModelManager = ServiceModelManager()
+		}
     }
-    
+
+	
     // MARK: Public functions
     
     /**
@@ -89,7 +94,7 @@ public class Device: NSObject {
      If done at initalizing it will override the existing peripheral delegate.
     */
     internal func registerServiceManager() {
-        peripheral.delegate = serviceModelManager
+        peripheral?.delegate = serviceModelManager
     }
     
 }
