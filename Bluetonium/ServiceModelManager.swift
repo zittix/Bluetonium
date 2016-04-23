@@ -160,10 +160,9 @@ internal class ServiceModelManager: NSObject, CBPeripheralDelegate {
             guard let serviceModel = serviceModel(withUUID: service.UUID.UUIDString) else {
                 continue
             }
-            // Perform discover characteristics only for registered characteristics.
-            let characteristics = serviceModel.characteristicUUIDs.CBUUIDs()
+            // Perform discover of all characteristics so that we can use non claimed characteristics later on.
             serviceModel.serviceAvailable = true
-            peripheral.discoverCharacteristics(characteristics, forService: service)
+            peripheral.discoverCharacteristics(nil, forService: service)
         }
     }
     
