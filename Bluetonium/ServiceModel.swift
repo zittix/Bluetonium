@@ -15,7 +15,7 @@ public func ==(lhs: ServiceModel, rhs: ServiceModel) -> Bool {
 }
 
 
-public class ServiceModel: Equatable {
+public class ServiceModel: NSObject {
     
     // MARK: Public properties
     
@@ -61,7 +61,9 @@ public class ServiceModel: Equatable {
 	
     // MARK: Initalizers
     
-    required public init() {
+    required public override init() {
+		super.init()
+		
         map.serviceModel = self
         
         // Prefill characteristicUUIDs.
