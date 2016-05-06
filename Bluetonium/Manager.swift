@@ -28,7 +28,7 @@ public class Manager: NSObject, CBCentralManagerDelegate {
 	public var automaticallyRestoreConnections = false
 	
     
-    private var cbManager: CBCentralManager!
+    public var cbManager: CBCentralManager!
 	
     // MARK: Initializers
     
